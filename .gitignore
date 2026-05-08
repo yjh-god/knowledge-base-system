@@ -8,5 +8,11 @@ __pycache__/
 .Python
 frontend/dist/
 storage/uploads/
+storage/
+vendor/qdrant/
+snapshots/
+.qdrant-initialized
+**/Untitled
+cd
 debug*.log
 .cursor/
