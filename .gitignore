@@ -16,3 +16,13 @@ snapshots/
 cd
 debug*.log
 .cursor/
+
+# --- 不入库：截图、内部 Word/Excel（frontend/assets 下的 png 仍提交）---
+/ScreenShot_*.png
+/微信图片*.png
+/*.docx
+/*.xlsx
+/*.doc
+/docs/**/*.docx
+/docs/**/*.xlsx
+/docs/**/*.doc
