@@ -1,0 +1,205 @@
+/* 浅色企业后台：与参考图一致的蓝主色与页面底纹 */
+:root {
+    --kb-color-primary: #1890ff;
+    --kb-color-primary-dark: #096dd9;
+    --kb-bg-page: #f0f2f5;
+    --kb-bg-card: #ffffff;
+    --kb-border: #e8e8e8;
+    --kb-text-title: #1a1a1a;
+    --kb-text-secondary: #666666;
+    --kb-sidebar-active-bg: #e6f4ff;
+    --kb-shadow-card: 0 1px 4px rgba(0, 0, 0, 0.06);
+
+    --el-color-primary: #1890ff;
+    --el-color-primary-light-3: #40a9ff;
+    --el-color-primary-light-5: #69c0ff;
+    --el-color-primary-light-7: #91d5ff;
+    --el-color-primary-light-8: #bae7ff;
+    --el-color-primary-light-9: #e6f4ff;
+    --el-color-primary-dark-2: #096dd9;
+}
+
+html,
+body {
+    height: 100%;
+}
+
+#app {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+body {
+    margin: 0;
+    background-color: var(--kb-bg-page);
+    color: var(--kb-text-title);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC",
+        sans-serif;
+}
+
+/* 列表页统一：边距、卡片、表格；在 shell 主区内自行纵向滚动，不顶动侧栏 */
+.kb-page {
+    padding: 16px 20px 28px;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.kb-card {
+    border-radius: 10px;
+    border: 1px solid var(--kb-border);
+    box-shadow: var(--kb-shadow-card);
+}
+
+.kb-card :deep(.el-card__header) {
+    padding: 14px 20px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--kb-text-title);
+    border-bottom: 1px solid var(--kb-border);
+}
+
+.kb-card :deep(.el-card__body) {
+    padding: 20px 20px 24px;
+}
+
+.kb-section-title {
+    margin: 0 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--kb-text-title);
+}
+
+.kb-divider {
+    margin: 22px 0 18px !important;
+}
+
+.kb-table {
+    margin-top: 4px;
+}
+
+.kb-table :deep(.el-table__header-wrapper th.el-table__cell) {
+    background: #fafafa !important;
+    color: #262626;
+    font-weight: 600;
+    padding: 12px 12px;
+}
+
+.kb-table :deep(.el-table__body .el-table__cell) {
+    padding: 11px 12px;
+    vertical-align: middle;
+}
+
+.kb-table :deep(.el-table__row) {
+    height: 48px;
+}
+
+/* 文档库 / 任务 / 操作日志 / 同步历史：表头不换行 */
+.kb-table.kb-data-table :deep(.el-table__header-wrapper th.el-table__cell > .cell) {
+    white-space: nowrap;
+    line-height: 1.35;
+}
+
+.kb-pager {
+    margin-top: 20px;
+    padding-top: 4px;
+    justify-content: flex-end;
+}
+
+.kb-mono {
+    font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+    font-size: 12px;
+}
+
+/* 入库失败详情弹窗（挂载到 body，需全局类名） */
+.kb-ingest-err-dialog {
+    max-width: min(92vw, 720px) !important;
+}
+
+.kb-ingest-err-dialog .el-message-box__message {
+    max-height: 70vh;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: left;
+}
+
+/* 与 kb-page 对齐：检索/看板/日志/系统管理等仍用 .page 的页面 */
+.page {
+    padding: 16px 20px 28px;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.page > .el-card {
+    border-radius: 10px;
+    border: 1px solid var(--kb-border);
+    box-shadow: var(--kb-shadow-card);
+}
+
+.page > .el-card > .el-card__header {
+    padding: 14px 20px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--kb-text-title);
+    border-bottom: 1px solid var(--kb-border);
+}
+
+.page > .el-card > .el-card__body {
+    padding: 20px 20px 24px;
+}
+
+.page .el-table {
+    margin-top: 4px;
+}
+
+.page .el-table .el-table__header-wrapper th.el-table__cell {
+    background: #fafafa !important;
+    color: #262626;
+    font-weight: 600;
+    padding: 12px 12px;
+}
+
+.page .el-table .el-table__body .el-table__cell {
+    padding: 11px 12px;
+    vertical-align: middle;
+}
+
+.page .pager {
+    margin-top: 20px;
+    padding-top: 4px;
+    justify-content: flex-end;
+}
+
+/* 检索页：占满主区高度，内部 el-scrollbar 滚动，不把整页撑出视口 */
+.page--search {
+    padding: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.page--search > * {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}

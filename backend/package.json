@@ -1,0 +1,32 @@
+{
+    "name": "knowledge-base-backend",
+    "private": true,
+    "version": "0.1.0",
+    "type": "commonjs",
+    "main": "src/index.js",
+    "scripts": {
+        "predev": "node ../scripts/log-session-boot.js backend",
+        "dev": "node src/index.js",
+        "start": "node src/index.js",
+        "reset-kb": "node scripts/reset-kb-data.cjs",
+        "clear-audit-logs": "node scripts/clear-audit-logs.cjs"
+    },
+    "dependencies": {
+        "adm-zip": "^0.5.16",
+        "cors": "^2.8.5",
+        "diff": "^8.0.4",
+        "docx": "^9.6.1",
+        "dotenv": "^16.4.5",
+        "express": "^4.19.2",
+        "iconv-lite": "^0.6.3",
+        "ioredis": "^5.4.1",
+        "jsonwebtoken": "^9.0.2",
+        "multer": "^2.1.1",
+        "node-cron": "^3.0.3",
+        "officeparser": "^6.0.7",
+        "pdf-parse": "^1.1.1",
+        "tesseract.js": "^7.0.0",
+        "word-extractor": "^1.0.4",
+        "xlsx": "^0.18.5"
+    }
+}

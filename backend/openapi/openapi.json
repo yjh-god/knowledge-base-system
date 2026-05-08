@@ -1,0 +1,432 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Knowledge Base External API",
+        "version": "0.1.0",
+        "description": "External HTTP API (G9). 支持 JWT 或 API Key 鉴权，并复用部门范围过滤逻辑。"
+    },
+    "servers": [
+        {
+            "url": "http://localhost:3001"
+        }
+    ],
+    "tags": [
+        {
+            "name": "Auth"
+        },
+        {
+            "name": "Documents"
+        },
+        {
+            "name": "Search"
+        },
+        {
+            "name": "System"
+        }
+    ],
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            },
+            "apiKeyAuth": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-API-Key"
+            }
+        },
+        "schemas": {
+            "UnifiedResponse": {
+                "type": "object",
+                "required": ["code", "msg", "data"],
+                "properties": {
+                    "code": { "type": "integer" },
+                    "msg": { "type": "string" },
+                    "data": { "type": "object" }
+                }
+            },
+            "SearchRequest": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": { "type": "string" },
+                    "topK": { "type": "integer", "minimum": 1, "maximum": 50, "default": 8 },
+                    "hybrid": { "type": "boolean", "default": true, "description": "是否混合关键字分支（scroll + RRF）；false 为纯向量" },
+                    "includeAnswer": { "type": "boolean", "default": true, "description": "是否调用 vLLM 生成答复" },
+                    "includeRag": { "type": "boolean", "description": "兼容旧字段，语义同 includeAnswer" },
+                    "includeHits": { "type": "boolean", "default": true, "description": "是否在 data 中返回检索片段 hits；false 时仍内部检索并供 RAG 使用，响应更精简" }
+                }
+            },
+            "SearchHit": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "score": { "type": "number" },
+                    "retrievalSource": { "type": "string", "description": "vector | keyword | hybrid" },
+                    "vectorScore": { "type": "number" },
+                    "keywordScore": { "type": "number" },
+                    "rrfScore": { "type": "number" },
+                    "doc_id": { "type": "string" },
+                    "file_path": { "type": "string" },
+                    "file_name": { "type": "string" },
+                    "chunk_index": { "type": "integer" },
+                    "text_preview": { "type": "string" },
+                    "page_start": { "type": "integer" },
+                    "page_end": { "type": "integer" },
+                    "slide_index": { "type": "integer" },
+                    "section_heading": { "type": "string" },
+                    "sheet_name": { "type": "string" },
+                    "sheet_index": { "type": "integer" },
+                    "row_start": { "type": "integer" },
+                    "row_end": { "type": "integer" },
+                    "embedding_model_version": { "type": "string" }
+                },
+                "additionalProperties": true
+            },
+            "LoginRequest": {
+                "type": "object",
+                "required": ["loginId", "password"],
+                "properties": {
+                    "loginId": { "type": "string" },
+                    "password": { "type": "string" },
+                    "userDeptIds": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "开发账号可选：部门 UUID 列表"
+                    }
+                }
+            },
+            "ReindexQueued": {
+                "type": "object",
+                "properties": {
+                    "docId": { "type": "string", "format": "uuid" },
+                    "batchId": { "type": "string", "format": "uuid" },
+                    "jobId": { "type": "string", "format": "uuid" }
+                }
+            }
+        }
+    },
+    "security": [
+        { "bearerAuth": [] },
+        { "apiKeyAuth": [] }
+    ],
+    "paths": {
+        "/api/v1/auth/login": {
+            "post": {
+                "tags": ["Auth"],
+                "summary": "登录，返回 JWT（开发账号可用 userDeptIds）",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/LoginRequest" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "账号或密码错误",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "登录失败过频（IP 锁定）",
+                        "headers": {
+                            "Retry-After": {
+                                "schema": { "type": "integer" },
+                                "description": "建议等待秒数"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务配置错误等",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/documents": {
+            "get": {
+                "tags": ["Documents"],
+                "summary": "文档列表（分页，不含已删除）",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1, "default": 1 }
+                    },
+                    {
+                        "name": "pageSize",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未授权",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/documents/{docId}/reindex": {
+            "post": {
+                "tags": ["Documents"],
+                "summary": "手动重新入库（排队 immediate_upload，清空 indexed_content_md5）",
+                "parameters": [
+                    {
+                        "name": "docId",
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "string", "format": "uuid" }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已入队",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        { "$ref": "#/components/schemas/UnifiedResponse" },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": { "$ref": "#/components/schemas/ReindexQueued" }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数或业务校验失败（如文件不存在、无部门范围）",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未授权",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "文档不存在",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "写操作过频",
+                        "headers": {
+                            "Retry-After": {
+                                "schema": { "type": "integer" },
+                                "description": "建议等待秒数"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ready": {
+            "get": {
+                "tags": ["System"],
+                "summary": "依赖就绪（SQL Server + Qdrant），无需鉴权",
+                "security": [],
+                "responses": {
+                    "200": {
+                        "description": "依赖可用",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "部分依赖不可用",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/search": {
+            "post": {
+                "tags": ["Search"],
+                "summary": "混合检索（向量 + 关键字 scroll/RRF，可 hybrid=false 关闭）。默认启用 vLLM 生成 Markdown 答复（includeAnswer=false 或 includeRag=false 可关闭）。",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SearchRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        { "$ref": "#/components/schemas/UnifiedResponse" }
+                                    ],
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized (JWT/API Key missing or invalid)",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "检索请求过频（IP 或 API Key 配额）",
+                        "headers": {
+                            "Retry-After": {
+                                "schema": { "type": "integer" },
+                                "description": "建议等待秒数"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/search": {
+            "post": {
+                "tags": ["System"],
+                "summary": "管理员审计检索：不按部门过滤 Qdrant，写入 audit_logs（search.audit_query）；不调用 vLLM。需 JWT 且 role=admin。",
+                "security": [{ "bearerAuth": [] }],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/SearchRequest" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden — 非管理员",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/UnifiedResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

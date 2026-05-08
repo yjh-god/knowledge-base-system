@@ -1,0 +1,15 @@
+{
+    "name": "knowledge-base",
+    "private": true,
+    "version": "0.1.0",
+    "description": "根目录脚本：并行启动后端、前端与本地 Embedding 服务。向量库 Qdrant 需单独启动一次并保持运行。",
+    "scripts": {
+        "dev": "node scripts/dev.js",
+        "dev:backend": "npm run dev --prefix backend",
+        "dev:frontend": "npm run dev --prefix frontend",
+        "qdrant-ui": "node scripts/qdrant-web-ui.cjs"
+    },
+    "devDependencies": {
+        "concurrently": "^9.1.2"
+    }
+}

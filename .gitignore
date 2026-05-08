@@ -1,0 +1,12 @@
+.env
+node_modules/
+.venv/
+qdrant_storage/
+tools/qdrant-web-ui/
+__pycache__/
+*.pyc
+.Python
+frontend/dist/
+storage/uploads/
+debug*.log
+.cursor/

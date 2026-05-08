@@ -1,0 +1,229 @@
+================================================================================
+品质中心知识库系统（Knowledge_base）
+生成说明：根据仓库代码与文档整理；具体 IP、密码、密钥以现场 backend/.env 为准。
+================================================================================
+
+一、系统简介
+--------------------------------------------------------------------------------
+部门知识库：文档上传、解析、向量化入库（Qdrant），支持混合检索（向量 + 关键字）
+与可选大模型总结（RAG，需配置 VLLM_*）。含登录鉴权、部门范围、管理端（审计、
+API Key、EHR 同步、镜像同步、知识图谱等）。对外可通过 JWT 或 X-API-Key 调用 HTTP API。
+
+
+二、技术栈与仓库要点
+--------------------------------------------------------------------------------
+前端：Vue 3 + Vite + Element Plus + Pinia + Vue Router（目录 frontend/）
+后端：Node.js + Express（目录 backend/，入口 backend/src/index.js）
+业务数据库：Microsoft SQL Server（项目按 SQL Server 2014 兼容约束编写 SQL）
+向量数据库：Qdrant
+向量化：根目录 embedding_server.py（FastAPI + sentence-transformers，默认端口 8902）
+        亦可改用企业内网 Embedding HTTP 接口（见 backend/.env 中 EMBEDDING_*）
+
+连接数据库方式：后端通过本机 sqlcmd 执行 SQL（PATH 中需能找到 sqlcmd）。
+
+.cursor/rules 中有 sql-server-2014.mdc：改 SQL 时勿引入 2016+ 语法（如 OPENJSON、
+STRING_AGG、DROP IF EXISTS 等）。
+
+
+三、主要功能（页面路由，前端 frontend/src/router/index.js）
+--------------------------------------------------------------------------------
+/login                          登录（公开）
+/                               智能检索（需登录）
+/documents                      文档库（需登录）
+/jobs                           索引任务（需登录）
+/profile                        个人中心（需登录）
+/admin/dashboard                管理看板（需管理员）
+/admin/audit-logs               审计日志（需管理员）
+/admin/system                   系统管理（需管理员）
+/admin/knowledge-graph          知识图谱（需管理员）
+/admin/sync-config              同步配置（需管理员）
+
+
+四、服务与默认端口（以实际 .env 为准）
+--------------------------------------------------------------------------------
+后端 API           PORT，默认 3001（backend/.env）
+前端 Vite 开发     5173，host 0.0.0.0（frontend/package.json）
+本地 Embedding     8902（embedding_server.py）
+Qdrant HTTP        6333（docker-compose.yml 映射）
+Qdrant gRPC        6334
+Qdrant Web UI 脚本 5174（npm run qdrant-ui，与 5173 错开）
+
+根路径健康检查：GET http://<host>:<PORT>/health（注意不在 /api/v1 下）
+
+
+五、启动顺序（建议）
+--------------------------------------------------------------------------------
+1. 启动 SQL Server，确认已执行 backend/sql/ 下迁移脚本（按 001、002…编号顺序；
+   功能涉及图谱、同步、EHR 时需执行到对应最新脚本）。
+2. 启动并常驻 Qdrant：
+   仓库根目录：docker compose up -d qdrant
+   向量数据在 Docker volume「qdrant_data」，勿随意删除 volume。
+3. 配置 backend/.env（可参考仓库根目录 .env.example 注释）。至少包含：
+   MSSQL_SERVER、MSSQL_USER、MSSQL_PASSWORD、JWT_SECRET；
+   以及 QDRANT_URL、QDRANT_COLLECTION、Embedding 相关变量等。
+4. 若使用本仓库自带 embedding_server.py：
+   - 安装 Python 依赖：除根目录 requirements.txt 外，embedding_server.py 实际使用
+     fastapi、pydantic、uvicorn、sentence-transformers 等，需在运行环境自行 pip 安装齐全。
+   - 重要：embedding_server.py 内 MODEL_LOCAL_PATH 当前为硬编码的本地模型目录，
+     换电脑部署时必须改为该机实际路径，或改用 .env 中 EMBEDDING_API_BASE_URL 指向
+     已部署好的内网 Embedding 服务，避免仍指向原开发者机器路径导致启动失败。
+5. 一键开发（根目录）：npm run dev
+   - Windows：scripts/dev-with-kill.ps1 会先尝试结束占用 3001、5173、8902 的进程，
+     再并行启动 backend、frontend、embedding。
+   - 非 Windows：scripts/dev.js 使用 concurrently 同样启动三进程。
+6. 仅后端：npm run dev --prefix backend 或 npm run start --prefix backend
+7. 仅前端：npm run dev --prefix frontend（需后端或代理可达）
+8. Qdrant 图形界面（可选）：根目录 npm run qdrant-ui，详见 docs/使用指南.md
+
+
+六、关闭方式
+--------------------------------------------------------------------------------
+npm run dev 所在终端：Ctrl+C（concurrently -k 会结束子进程）。
+Qdrant：docker compose stop qdrant 或 docker compose down（注意 down 对 volume 的行为，
+勿误删生产向量数据）。
+
+
+七、数据库与文件存储位置（逻辑位置）
+--------------------------------------------------------------------------------
+SQL Server 业务库：
+  连接：环境变量 MSSQL_SERVER、MSSQL_USER、MSSQL_PASSWORD、MSSQL_DATABASE
+  （未设置 MSSQL_DATABASE 时默认库名 knowledge_base）
+  物理数据文件由 DBA/SQL 实例管理，应用只通过 sqlcmd 连接。
+
+EHR 源库（可选）：EHR_MSSQL_* 系列变量，与知识库库分离。
+
+上传文件落盘：
+  默认：项目下 storage/uploads/
+  若设置 KB_STORAGE_ROOT：该根目录下的 uploads/
+
+Qdrant 向量：由 Qdrant 进程/容器管理；Docker 下一般为卷 qdrant_data，与 uploads 无关。
+
+核心业务表示例：documents、index_jobs、audit_logs、departments、users 等（见 sql 脚本）。
+
+
+八、API 根路径与主要接口
+--------------------------------------------------------------------------------
+统一前缀：http://<服务器>:<PORT>/api/v1
+
+无需鉴权（示例）：
+  GET  /api/v1/health
+  GET  /api/v1/ready          （SQL + Qdrant 就绪）
+  GET  /api/v1/metrics
+  GET  /api/v1/openapi.json
+  POST /api/v1/auth/login
+
+需鉴权（Bearer JWT 或部分场景 X-API-Key，与中间件一致）：
+  POST /api/v1/auth/change-password
+  GET  /api/v1/departments/
+  GET  /api/v1/users/me
+  GET  /api/v1/users/avatar
+  POST /api/v1/search/
+  POST /api/v1/search/compare-file          （multipart）
+  POST /api/v1/search/compare-two-files     （multipart）
+  GET  /api/v1/documents/
+  POST /api/v1/documents/upload             （multipart，批量）
+  GET  /api/v1/documents/upload-batch/:batchId
+  POST /api/v1/documents/                   （Mock 文本入库，测试用）
+  POST /api/v1/documents/:docId/reindex
+  DELETE /api/v1/documents/:docId
+  GET  /api/v1/index-jobs/
+
+管理员（JWT 且 role=admin；另兼容挂载 /admin/*）：
+  POST /api/v1/admin/search
+  GET  /api/v1/admin/config
+  GET  /api/v1/admin/dashboard
+  GET  /api/v1/admin/audit-logs
+  GET|POST /api/v1/admin/api-keys
+  POST /api/v1/admin/api-keys/:id/revoke
+  POST /api/v1/admin/ehr-sync
+  POST /api/v1/admin/night-reconcile
+  GET|PUT /api/v1/admin/sync-settings
+  POST /api/v1/admin/sync-settings/run
+  GET  /api/v1/admin/sync-settings/process-check
+  GET  /api/v1/admin/sync-runs
+  POST /api/v1/admin/sync-settings/test-wecom
+  POST /api/v1/admin/users/:loginId/reset-password
+  /api/v1/admin/kg/...                      （知识图谱，见 kgAdmin.js、kgInstancesAdmin.js）
+
+前端开发：浏览器访问 /api 时由 Vite 代理到后端（frontend/vite.config.js 读取 backend/.env
+的 PORT 或 VITE_DEV_API_PROXY）。
+
+局域网/第三方对接示例与防火墙说明：docs/其他电脑访问与上传删除测试步骤.md
+
+
+九、npm 脚本速查（根目录与分包）
+--------------------------------------------------------------------------------
+根目录 package.json：
+  npm run dev              并行 backend + frontend + embedding（Windows 用 ps1 杀端口）
+  npm run dev:backend
+  npm run dev:frontend
+  npm run qdrant-ui       官方 Qdrant Web UI（默认 5174）
+
+backend/package.json：
+  npm run dev / npm run start    启动 API
+  npm run reset-kb               重置知识库数据（慎用）
+  npm run clear-audit-logs       清理审计日志（慎用）
+
+frontend/package.json：
+  npm run dev
+  npm run build / npm run preview   生产构建与本地预览
+
+
+十、生产与跨域（务必交接）
+--------------------------------------------------------------------------------
+生产环境应设置 NODE_ENV=production，并配置 CORS_ORIGIN（逗号分隔允许的前端 Origin）。
+开发环境下后端对浏览器 Origin 较宽松；生产不配 CORS 会导致前端跨域失败。
+
+JWT_SECRET、数据库密码、API Key、内网 LLM/Embedding 地址等一律只放环境变量或密钥管理，
+不要写入代码或提交 Git。
+
+
+十一、可选组件与运维开关（见 .env.example）
+--------------------------------------------------------------------------------
+Redis（REDIS_URL）：多实例时登录失败计数、API 限流等建议共用 Redis。
+node-cron 定时任务：KB_DISABLE_SCHEDULER、KB_DISABLE_NIGHT_BATCH、KB_DISABLE_EHR_CRON、
+DISABLE_MIRROR_SCAN 等可按环境关闭或调整。
+审计采样：AUDIT_SEARCH_SAMPLE_RATE、AUDIT_RAG_SAMPLE_RATE。
+镜像同步：KB_SYNC_MIRROR_DIR、MIRROR_SCAN_MS、企业微信 webhook 等。
+
+
+十二、常见问题（补充）
+--------------------------------------------------------------------------------
+- 入库失败：先确认 Qdrant 已启动且 QDRANT_URL 正确；再查 SQL 与 index_jobs 错误信息。
+- 上传返回提示缺列：按错误提示执行对应 backend/sql 迁移（如 004、005、010 等）。
+- sqlcmd 报错 Missing env：检查 backend/.env 是否在 backend 目录且变量齐全。
+- Qdrant 无内置 Dashboard（/dashboard 404）：使用 npm run qdrant-ui。
+- 中文乱码：可设 MSSQL_SQLCMD_STDOUT_ENCODING（见 backend/src/lib/sqlcmd.js 注释）。
+- 其他电脑访问：放行 Windows 防火墙入站 TCP（至少 API 端口，如 3001），见上文 md 文档。
+
+
+十三、调试与日志文件（了解即可）
+--------------------------------------------------------------------------------
+开发时可能写入知识库根目录：debug-840c9e.log（及 .cursor/debug-840c9e.log），来源包括
+scripts/dev.js、log-session-boot、Vite 插件等；非业务日志，可按需清理。
+
+代码中若存在指向本机调试 ingest 的 fetch（如 127.0.0.1:7267），无该服务时不影响主流程，
+仅调试请求会失败。
+
+
+十四、仓库内文档索引
+--------------------------------------------------------------------------------
+docs/使用指南.md                              启动、Qdrant、存储、EHR
+docs/其他电脑访问与上传删除测试步骤.md        集成与防火墙
+docs/知识库开发PRD文档.md                      产品说明（若存在）
+backend/openapi/openapi.json                  对外 API 契约（与运行时 openapi 一致）
+backend/sql/*.sql                             数据库迁移脚本
+
+
+十五、交接检查清单（建议逐项确认）
+--------------------------------------------------------------------------------
+[ ] 移交 backend/.env（或等价密钥托管方式），区分测试/生产。
+[ ] 说明 SQL Server 实例、库名、备份与恢复责任人。
+[ ] 说明 Qdrant 部署方式、6333 访问范围、Docker volume 备份策略。
+[ ] 说明 Embedding：使用内网服务还是本机 embedding_server.py；若本机，已修改 MODEL_LOCAL_PATH。
+[ ] 说明 vLLM（RAG）地址与模型名、超时、配额。
+[ ] 防火墙与反向代理（若生产 HTTPS 终止在网关，需配置 CORS 与前端 VITE_API_BASE_URL）。
+[ ] 管理员账号、API Key 发放对象与轮换计划。
+[ ] 已执行过的 sql 迁移版本号或变更记录（便于后续升级）。
+
+================================================================================
